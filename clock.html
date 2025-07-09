@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Clock</title>
+    <style>
+      /* Minimal CSS to satisfy the requirements */
+      section {
+        border: 1px solid black;
+        padding: 1em;
+        margin-bottom: 1em;
+      }
+      .hidden {
+        display: none;
+      }
+    </style>
+    <script>
+      "use strict";
+
+      // Main entry point, runs after the DOM is fully loaded.
+      window.addEventListener("load", main);
+
+      function main() {
+        // Instantiate the singleton ticker
+        const ticker = Ticker.getInstance();
+
+        // Instantiate all the app components
+        new Clock();
+        new Timer();
+        new Stopwatch();
+        new Countdown();
+
+        // Start the ticker to begin updates
+        ticker.start();
+      }
+
+      /**
+       * Ticker class (Singleton, Observable)
+       * Notifies observers approximately once per second using a recursive
+       * setTimeout loop, ensuring only one timeout is active at a time.
+       */
+      class Ticker {
+        static #instance = null;
+
+        constructor() {
+          if (Ticker.#instance) {
+            throw new Error(
+              "Error: Ticker is a singleton. Use Ticker.getInstance()."
+            );
+          }
+          this.observers = [];
+          this.timeoutId = null;
+          Ticker.#instance = this;
+        }
+
+        static getInstance() {
+          if (!Ticker.#instance) {
+            Ticker.#instance = new Ticker();
+          }
+          return Ticker.#instance;
+        }
+
+        addObserver(observer) {
+          this.observers.push(observer);
+        }
+
+        notify() {
+          const now = new Date();
+          for (const observer of this.observers) {
+            // Pass the current timestamp to avoid multiple `new Date()` calls
+            observer.update(now);
+          }
+        }
+
+        // The single recursive setTimeout loop
+        #tick() {
+          this.notify();
+          // Ensure only one timeout is ever scheduled.
+          this.timeoutId = setTimeout(() => this.#tick(), 1000);
+        }
+
+        start() {
+          if (!this.timeoutId) {
+            this.#tick();
+          }
+        }
+      }
+
+      /**
+       * Clock Class
+       * Displays the current time, updating every second.
+       */
+      class Clock {
+        constructor() {
+          this.display = document.getElementById("clock-display");
+          Ticker.getInstance().addObserver(this);
+        }
+
+        update(now) {
+          const hours = now.getHours().toString().padStart(2, "0");
+          const minutes = now.getMinutes().toString().padStart(2, "0");
+          const seconds = now.getSeconds().toString().padStart(2, "0");
+          this.display.textContent = `${hours}:${minutes}:${seconds}`;
+        }
+      }
+
+      /**
+       * Timer Class
+       * A user-configurable countdown timer.
+       */
+      class Timer {
+        constructor() {
+          this.minutesInput = document.getElementById("timer-minutes");
+          this.secondsInput = document.getElementById("timer-seconds");
+          this.toggle = document.getElementById("timer-toggle");
+          this.display = document.getElementById("timer-display");
+
+          this.endTime = 0;
+          this.isRunning = false;
+
+          this.toggle.addEventListener("change", this.#handleToggle.bind(this));
+          Ticker.getInstance().addObserver(this);
+        }
+
+        #handleToggle() {
+          this.isRunning = this.toggle.checked;
+          if (this.isRunning) {
+            const minutes = parseInt(this.minutesInput.value, 10) || 0;
+            const seconds = parseInt(this.secondsInput.value, 10) || 0;
+            const totalSeconds = minutes * 60 + seconds;
+
+            if (totalSeconds > 0) {
+              this.endTime = Date.now() + totalSeconds * 1000;
+              this.minutesInput.disabled = true;
+              this.secondsInput.disabled = true;
+            } else {
+              this.isRunning = false;
+              this.toggle.checked = false;
+              this.display.textContent = "Set a time";
+            }
+          } else {
+            this.minutesInput.disabled = false;
+            this.secondsInput.disabled = false;
+            this.display.textContent = "Timer stopped";
+          }
+        }
+
+        update(now) {
+          if (!this.isRunning) {
+            return;
+          }
+
+          const remainingMs = this.endTime - now.getTime();
+
+          if (remainingMs <= 0) {
+            this.isRunning = false;
+            this.toggle.checked = false;
+            this.minutesInput.disabled = false;
+            this.secondsInput.disabled = false;
+            this.display.textContent = "Time's Up!";
+          } else {
+            const remainingSeconds = Math.ceil(remainingMs / 1000);
+            const minutes = Math.floor(remainingSeconds / 60);
+            const seconds = remainingSeconds % 60;
+            this.display.textContent = `${minutes
+              .toString()
+              .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+          }
+        }
+      }
+
+      /**
+       * Stopwatch Class
+       * Measures elapsed time with start, stop, and reset functionality.
+       */
+      class Stopwatch {
+        constructor() {
+          this.display = document.getElementById("stopwatch-display");
+          this.startButton = document.getElementById("stopwatch-start");
+          this.stopButton = document.getElementById("stopwatch-stop");
+          this.resetButton = document.getElementById("stopwatch-reset");
+
+          this.isRunning = false;
+          this.startTime = 0;
+          this.elapsedTime = 0;
+
+          this.startButton.addEventListener("click", this.#start.bind(this));
+          this.stopButton.addEventListener("click", this.#stop.bind(this));
+          this.resetButton.addEventListener("click", this.#reset.bind(this));
+
+          this.#updateButtons();
+          Ticker.getInstance().addObserver(this);
+        }
+
+        #updateButtons() {
+          this.startButton.disabled = this.isRunning;
+          this.stopButton.disabled = !this.isRunning;
+        }
+
+        #start() {
+          if (!this.isRunning) {
+            this.isRunning = true;
+            this.startTime = Date.now() - this.elapsedTime;
+            this.#updateButtons();
+          }
+        }
+
+        #stop() {
+          if (this.isRunning) {
+            this.isRunning = false;
+            this.elapsedTime = Date.now() - this.startTime;
+            this.#updateButtons();
+            this.update(new Date()); // Final update to show exact stop time
+          }
+        }
+
+        #reset() {
+          this.isRunning = false;
+          this.elapsedTime = 0;
+          this.startTime = 0;
+          this.display.textContent = "0:00:00.000";
+          this.#updateButtons();
+        }
+
+        update(now) {
+          if (!this.isRunning) {
+            return;
+          }
+
+          const currentElapsed = now.getTime() - this.startTime;
+          const ms = Math.floor(currentElapsed % 1000);
+          const seconds = Math.floor((currentElapsed / 1000) % 60);
+          const minutes = Math.floor((currentElapsed / (1000 * 60)) % 60);
+          const hours = Math.floor(currentElapsed / (1000 * 60 * 60));
+
+          this.display.textContent = `${hours}:${minutes
+            .toString()
+            .padStart(2, "0")}:${seconds
+            .toString()
+            .padStart(2, "0")}.${ms.toString().padStart(3, "0")}`;
+        }
+      }
+
+      /**
+       * Countdown Class
+       * Counts down to or up from a specific date and time set by the user.
+       */
+      class Countdown {
+        constructor() {
+          this.datetimeInput = document.getElementById("countdown-datetime");
+          this.display = document.getElementById("countdown-display");
+          this.finishedMessage = document.getElementById("countdown-finished");
+
+          this.targetDate = null;
+
+          this.datetimeInput.addEventListener(
+            "change",
+            this.#handleInputChange.bind(this)
+          );
+          Ticker.getInstance().addObserver(this);
+        }
+
+        #handleInputChange() {
+          const value = this.datetimeInput.value;
+          if (value) {
+            this.targetDate = new Date(value);
+            this.finishedMessage.classList.add("hidden");
+          } else {
+            this.targetDate = null;
+            this.display.textContent = "Select a date and time.";
+          }
+        }
+
+        update(now) {
+          if (!this.targetDate) {
+            return;
+          }
+
+          const isPast = now > this.targetDate;
+          this.finishedMessage.classList.toggle("hidden", !isPast);
+
+          let d1 = isPast ? this.targetDate : now;
+          let d2 = isPast ? now : this.targetDate;
+
+          let y = d2.getFullYear() - d1.getFullYear();
+          let m = d2.getMonth() - d1.getMonth();
+          let d = d2.getDate() - d1.getDate();
+          let h = d2.getHours() - d1.getHours();
+          let min = d2.getMinutes() - d1.getMinutes();
+          let s = d2.getSeconds() - d1.getSeconds();
+
+          // Perform "borrowing" for negative values
+          if (s < 0) {
+            min--;
+            s += 60;
+          }
+          if (min < 0) {
+            h--;
+            min += 60;
+          }
+          if (h < 0) {
+            d--;
+            h += 24;
+          }
+          if (d < 0) {
+            m--;
+            const daysInLastMonth = new Date(
+              d2.getFullYear(),
+              d2.getMonth(),
+              0
+            ).getDate();
+            d += daysInLastMonth;
+          }
+          if (m < 0) {
+            y--;
+            m += 12;
+          }
+
+          const suffix = isPast ? "ago" : "remaining";
+          this.display.textContent = `${y} years ${m} months ${d} days ${h} hours ${min} minutes ${s} seconds ${suffix}`;
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <h1>Clock Suite</h1>
+    <main>
+      <section id="clock-section">
+        <h2>Current Time</h2>
+        <p id="clock-display">--:--:--</p>
+      </section>
+
+      <section id="timer-section">
+        <h2>Timer</h2>
+        <form>
+          <label for="timer-minutes">Minutes:</label>
+          <input type="number" id="timer-minutes" min="0" value="5" />
+          <label for="timer-seconds">Seconds:</label>
+          <input type="number" id="timer-seconds" min="0" max="59" value="0" />
+          <label for="timer-toggle">Run:</label>
+          <input type="checkbox" id="timer-toggle" />
+        </form>
+        <p id="timer-display">Timer stopped</p>
+      </section>
+
+      <section id="stopwatch-section">
+        <h2>Stopwatch</h2>
+        <p id="stopwatch-display">0:00:00.000</p>
+        <nav>
+          <button id="stopwatch-start">Start</button>
+          <button id="stopwatch-stop">Stop</button>
+          <button id="stopwatch-reset">Reset</button>
+        </nav>
+      </section>
+
+      <section id="countdown-section">
+        <h2>Countdown</h2>
+        <form>
+          <label for="countdown-datetime">Countdown to:</label>
+          <input type="datetime-local" id="countdown-datetime" />
+        </form>
+        <p id="countdown-display">Select a date and time.</p>
+        <p id="countdown-finished" class="hidden">The countdown is over!</p>
+      </section>
+    </main>
+  </body>
+</html>
